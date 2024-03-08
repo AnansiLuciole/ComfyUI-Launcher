@@ -8,6 +8,7 @@ from showinfm import show_in_file_manager
 from settings import PROJECTS_DIR, MODELS_DIR, TEMPLATES_DIR
 import requests
 import os, psutil, sys
+import docker
 from utils import (
     CONFIG_FILEPATH,
     DEFAULT_CONFIG,
@@ -192,6 +193,8 @@ def import_project():
 
 @app.route("/api/projects/<id>/start", methods=["POST"])
 def start_project(id):
+    client = docker.from_env()
+
     project_path = os.path.join(PROJECTS_DIR, id)
     assert os.path.exists(project_path), f"Project with id {id} does not exist"
 
@@ -200,10 +203,17 @@ def start_project(id):
 
     assert launcher_state["state"] == "ready", f"Project with id {id} is not ready yet"
 
+    # Build Docker image for the project
+    image_name = f"project_{id}"
+    dockerfile_path = os.path.join(project_path, "Dockerfile")
+    client.images.build(path=project_path, dockerfile=dockerfile_path, tag=image_name)
+
     # find a free port
     port = find_free_port()
     assert port, "No free port found"
     assert not is_port_in_use(port), f"Port {port} is already in use"
+
+    ports = {str(port): port}  # Map container port to host port
 
     # # start the project
     # pid = run_command_in_project_comfyui_venv(
@@ -212,12 +222,15 @@ def start_project(id):
     # assert pid, "Failed to start the project"
 
     # start the project
+    container = client.containers.run(image_name, ports=ports, detach=True)
+    container_running = client.containers.get(container.name)
+
     command = f"python main.py --port {port}"
     if os.name == "nt":
         command = f"start \"\" cmd /c \"{command}\""
 
     pid = run_command_in_project_comfyui_venv(
-        project_path, command, in_bg=True
+        container_running, project_path, command, in_bg=True
     )
     assert pid, "Failed to start the project"
 

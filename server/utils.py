@@ -99,16 +99,30 @@ def print_process_output(process):
         print(line.decode(), end='')
     process.stdout.close()
 
-def run_command(cmd: List[str], cwd: Optional[str] = None, bg: bool = False) -> None:
-    process = subprocess.Popen(" ".join(cmd), cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+# def run_command(cmd: List[str], cwd: Optional[str] = None, bg: bool = False) -> None:
+#     process = subprocess.Popen(" ".join(cmd), cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     
+#     if bg:
+#         # Create a separate thread to handle the printing of the process's output
+#         threading.Thread(target=print_process_output, args=(process,), daemon=True).start()
+#         return process.pid
+#     else:
+#         print_process_output(process)
+#         assert process.wait() == 0
+
+def run_command(cmd: List[str], container: str, cwd: Optional[str] = None, bg: bool = False) -> None:
+    docker_cmd = ["docker", "exec"]
     if bg:
-        # Create a separate thread to handle the printing of the process's output
-        threading.Thread(target=print_process_output, args=(process,), daemon=True).start()
-        return process.pid
-    else:
+        docker_cmd.append("-d")
+    docker_cmd.extend([container] + cmd)
+    
+    process = subprocess.Popen(docker_cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    
+    if not bg:
         print_process_output(process)
         assert process.wait() == 0
+    else:
+        return process.pid
 
 def get_ckpt_names_with_node_info(workflow_json: Union[Dict, List], is_windows: bool) -> List[ModelFileWithNodeInfo]:
     ckpt_names = []
@@ -144,16 +158,27 @@ def run_command_in_project_venv(project_folder_path, command):
     # Run the command using subprocess and capture stdout
     run_command(command)
 
-def run_command_in_project_comfyui_venv(project_folder_path, command, in_bg=False):
+# def run_command_in_project_comfyui_venv(project_folder_path, command, in_bg=False):
+#     venv_activate = os.path.join(project_folder_path, "venv", "Scripts", "activate.bat") if os.name == "nt" else os.path.join(project_folder_path, "venv", "bin", "activate")
+#     comfyui_dir = os.path.join(project_folder_path, "comfyui")
+    
+#     assert os.path.exists(venv_activate), f"Virtualenv does not exist in project folder: {project_folder_path}"
+
+#     if os.name == "nt":
+#         return run_command([venv_activate, "&&", "cd", comfyui_dir, "&&", command], bg=in_bg)
+#     else:
+#         return run_command([".", venv_activate, "&&", "cd", comfyui_dir, "&&", command], bg=in_bg)
+
+def run_command_in_project_comfyui_venv(container, project_folder_path, command, in_bg=False):
     venv_activate = os.path.join(project_folder_path, "venv", "Scripts", "activate.bat") if os.name == "nt" else os.path.join(project_folder_path, "venv", "bin", "activate")
     comfyui_dir = os.path.join(project_folder_path, "comfyui")
     
     assert os.path.exists(venv_activate), f"Virtualenv does not exist in project folder: {project_folder_path}"
 
     if os.name == "nt":
-        return run_command([venv_activate, "&&", "cd", comfyui_dir, "&&", command], bg=in_bg)
+        return run_command([venv_activate, "&&", "cd", comfyui_dir, "&&", command], container=container, bg=in_bg)
     else:
-        return run_command([".", venv_activate, "&&", "cd", comfyui_dir, "&&", command], bg=in_bg)
+        return run_command([".", venv_activate, "&&", "cd", comfyui_dir, "&&", command], container=container, bg=in_bg)
 
 
 def install_default_custom_nodes(project_folder_path, launcher_json=None):
